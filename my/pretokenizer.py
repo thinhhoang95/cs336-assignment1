@@ -71,6 +71,7 @@ def process_chunk(chunk_args):
     start = chunk_args[0]
     end = chunk_args[1]
     text_corpus_path = chunk_args[2]
+    special_tokens = chunk_args[3]
 
     with open(text_corpus_path, "rb") as f:
         f.seek(start)
@@ -78,7 +79,8 @@ def process_chunk(chunk_args):
         # print(f"Text chunk: {chunk[:20]} ... {chunk[-20:]} | Length: {len(chunk)}")
 
         # Split the stories at the special <|endoftext|> token 
-        stories = re.split(r"<\|endoftext\|>", chunk) # match any blank spaces before and after the endoftext token. Note we need to escape the "OR" operator | with a backslash
+        alts = "|".join(re.escape(t) for t in special_tokens)
+        stories = re.split(rf"(?:{alts})\s*", chunk)
         chunk_pretoken_counts = Counter()
         for story in stories:
             # print(f"Text story: {story[:20]} ... {story[-20:]} | Length {len(story)}")
@@ -88,14 +90,18 @@ def process_chunk(chunk_args):
 
     return chunk_pretoken_counts
 
-if __name__ == "__main__":
-    ## Usage
-    text_corpus_path = "data/TinyStoriesV2-GPT4-valid.txt"
-    num_processes = 4
-    with open(text_corpus_path, "rb") as f:
+from pathlib import Path
+
+def pretokenize_text(training_text_path: Path, special_tokens: list[str], pretoken_counts_path: Path, num_processes = None):
+    # set num_processes to n_cpu - 1 if num_processes = None
+    if num_processes is None: 
+        num_processes = os.cpu_count() - 1
+    
+    # Chunkening the large text corpus into smaller chunks
+    with open(training_text_path, "rb") as f:
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
 
-    chunk_args = [(boundaries[i], boundaries[i+1], text_corpus_path) for i in range(len(boundaries)-1)] # [(0, 255122), (255122, 353124), ...]
+    chunk_args = [(boundaries[i], boundaries[i+1], training_text_path, special_tokens) for i in range(len(boundaries)-1)] # [(0, 255122), (255122, 353124), ...]
 
     with multiprocessing.Pool(processes=num_processes) as pool:
         chunk_pretoken_counts = pool.map(process_chunk, chunk_args)
@@ -104,16 +110,14 @@ if __name__ == "__main__":
     from functools import reduce
     total_counts = reduce(lambda x, y: x + y, chunk_pretoken_counts)
 
-    # Show the first 5 counts
-    print_count = 0
-    for pretok in total_counts:
-        print(f"{pretok} → {total_counts[pretok]}")
-        print_count += 1
-        if print_count == 5:
-            break
-
     # Write the final results to a file
-    with open("pretoken_counts.pkl", "wb") as f_prime:
+    with open(pretoken_counts_path, "wb") as f_prime:
         pickle.dump(total_counts, f_prime)
-        print("Total counts saved to pretoken_counts.pkl")
+        print(f"Total counts saved to {pretoken_counts_path}, containing {len(total_counts)} entries.")
+    
 
+if __name__ == "__main__":
+    ## Usage
+    text_corpus_path = "data/TinyStoriesV2-GPT4-valid.txt"
+    special_tokens = ["<|endoftext|>", "<|example|>"]
+    pretokenize_text(Path(text_corpus_path), special_tokens ,Path("output/pretoken_counts.pkl"), 1)
