@@ -2,7 +2,7 @@ from pretokenizer import pretokenize_text
 from rich.progress import track
 
 def bytes_to_tuples(input: bytes) -> tuple(bytes):
-    return tuple[bytes](bytes([b]) for b in input)
+    return tuple(bytes([b]) for b in input)
 
 from collections import Counter 
 def count_byte_pairs(input: tuple, n_occurrences: int = 1) -> dict(tuple[bytes, int]):
@@ -46,7 +46,7 @@ def count_and_merge_byte_pairs(pretoken_counts: dict[tuple[bytes], int], new_voc
     for vocab_to_add_index in track(range(new_vocabs), description="Finding merges..."):
         byte_pair_counter = Counter()
         for pretoken in pretoken_counts:
-            byte_pair_counter += count_byte_pairs(pretoken)
+            byte_pair_counter += count_byte_pairs(pretoken, pretoken_counts[pretoken])
 
         # Find the most common byte pair
         most_frequent_byte_pair = max(byte_pair_counter.items(), key=lambda item: (item[1], item[0]))[0]
@@ -70,7 +70,10 @@ def count_and_merge_byte_pairs(pretoken_counts: dict[tuple[bytes], int], new_voc
             assert len(n_occurrences_to_append) == (i + 1)
 
         for i, pretoken in enumerate(tuples_to_append):
-            pretoken_counts[pretoken] = n_occurrences_to_append[i]
+            if pretoken not in pretoken_counts:
+                pretoken_counts[pretoken] = n_occurrences_to_append[i]
+            else:
+                pretoken_counts[pretoken] += n_occurrences_to_append[i]
 
     return merges
 
